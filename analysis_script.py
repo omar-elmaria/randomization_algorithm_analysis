@@ -15,9 +15,9 @@ warnings.filterwarnings(action="ignore")
 ##-----------------------------------------------------END OF STEP 1-----------------------------------------------------##
 
 # Step 2: Define some input parameters
-exp_length = [7, 14, 21, 28] # 7, 14, 21, and 28 days
 sb_window_size = [2, 3, 4] # 2, 3, and 4 hours
 num_variants = [2, 3, 4, 5, 6, 7] # 2, 3, 4, 5, 6, and 7 variants 
+exp_length = [7, 14, 21, 28] # 7, 14, 21, and 28 days
 col_list = [
     'actual_df_paid_by_customer', 'gfv_local', 'gmv_local', 'commission_local', 'joker_vendor_fee_local', # Customer KPIs (1)
     'sof_local', 'service_fee_local', 'revenue_local', 'delivery_costs_local', 'gross_profit_local', # Customer KPIs (2)
@@ -39,6 +39,8 @@ entity_asa_zone_dict = [ # Define a list of dictionaries containing the entity I
     {"entity_id": "FP_PH", "asa_id": 528, "zone_names": ["Antipolo north", "Malabon", "Sjdm", "Valenzuela"], "zone_group_identifier": "zg_8"},
     {"entity_id": "FP_PH", "asa_id": 508, "zone_names": ["Makati", "Pasay"], "zone_group_identifier": "zg_9"}
 ]
+zone_groups = [i["zone_group_identifier"] for i in entity_asa_zone_dict]
+sig_level = 0.05
 
 ##-----------------------------------------------------END OF STEP 2-----------------------------------------------------##
 
@@ -152,7 +154,7 @@ def hr_interval_date_func_random(zg_id, test_length, sb_interval, zone_name_list
     df_mapping['time_zone_unit_id'] = rng.choice(rnd_id_list, replace = False, axis = 0, size = len(df_mapping))
     return df_mapping
 
-# Create a function that gets the p-value for one simulation run. One simulation run entails one zg_id, sb_window_size, number_of_variants, and experiment length
+# Step 7: Create a function that gets the p-value for one simulation run. One simulation run entails one zg_id, sb_window_size, number_of_variants, and experiment length
 def p_val_func(zg_id, exp_length, sb_window_size):
     # After the output.csv file is created, retrieve the variants from the output.csv file and join them to df_reduced
     df_variants = pd.read_csv("output.csv")
@@ -226,3 +228,74 @@ def p_val_func(zg_id, exp_length, sb_window_size):
 
     return df_analysis, df_analysis_tot, df_analysis_per_order
     ##-----------------------------------------------------SEPARATOR-----------------------------------------------------##
+
+# Step 8: Loop through every zone group ID, SB window size, number of variants, and experiment length to calculate the ANOVA p-value
+pval_list = []
+for zn in zone_groups: # Loop through all the zone group IDs
+    for sb in sb_window_size: # Loop through all switchback window sizes
+        for var in num_variants: # Loop through all variants
+            for exp in exp_length: # Loop through all experiment lengths
+                var_allocation_func(zg_id=zn, sb_window_size=sb, num_variants=var, exp_start_time=exp) # Run the variant allocation function. The output is a CSV file containing the variant allocations
+                df_analysis, df_analysis_tot, df_analysis_per_order = p_val_func(zg_id=zn, exp_length=exp, sb_window_size=sb) # Run the function that returns the data frames that can be used to compute p-values
+
+                # Calculate the ANOVA p-value
+                for iter_col in df_analysis_per_order.columns[2:]:
+                    anova_pval_tot = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis_tot)["p-unc"].iloc[0].round(4)
+                    anova_pval_per_order = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis_per_order)["p-unc"].iloc[0].round(4)
+
+                    # Create significance flags based on the p-values
+                    if anova_pval_tot <= sig_level:
+                        anova_sig_tot = "significant"
+                    else:
+                        anova_sig_tot = "insignificant"
+
+                    if anova_pval_per_order <= sig_level:
+                        anova_sig_per_order = "significant"
+                    else:
+                        anova_sig_per_order = "insignificant"
+                
+                    # Append to df_pval
+                    output_dict = {
+                        "sim_run_id": zn + "-" + sb + "-window_size-" + var + "-var_num-" + exp + "-exp_length",
+                        "zone_group": zn,
+                        "sb_window_size": sb,
+                        "num_variants": var,
+                        "exp_length": exp,
+                        "kpi": iter_col,
+                        "anova_pval_tot": anova_pval_tot,
+                        "anova_sig_tot": anova_sig_tot,
+                        "anova_pval_per_order": anova_pval_per_order,
+                        "anova_sig_per_order": anova_sig_per_order,
+                    }
+                    pval_list.append(output_dict)
+
+# Convert df_pval to a data frame
+df_pval = pd.DataFrame(pval_list)
+
+##-----------------------------------------------------END OF STEP 8-----------------------------------------------------##
+
+# Upload the data frame to big query
+job_config = bigquery.LoadJobConfig(
+    schema = [
+        bigquery.SchemaField("sim_run_id", "STRING"),
+        bigquery.SchemaField("zone_group", "STRING"),
+        bigquery.SchemaField("sb_window_size", "INT64"),
+        bigquery.SchemaField("num_variants", "INT64"),
+        bigquery.SchemaField("exp_length", "INT64"),
+        bigquery.SchemaField("kpi", "STRING"),
+        bigquery.SchemaField("anova_pval_tot", "FLOAT64"),
+        bigquery.SchemaField("anova_sig_tot", "STRING"),
+        bigquery.SchemaField("anova_pval_per_order", "FLOAT64"),
+        bigquery.SchemaField("anova_sig_per_order", "STRING"),
+    ]
+)
+
+# Set the job_config to overwrite the data in the table
+job_config.write_disposition = bigquery.WriteDisposition.WRITE_TRUNCATE
+
+# Upload the p-values data frame to BQ
+client.load_table_from_dataframe(
+    dataframe=df_pval.reset_index(),
+    destination="dh-logistics-product-ops.pricing.df_pval_switchback_randomization_algo_analysis",
+    job_config=job_config
+).result()
