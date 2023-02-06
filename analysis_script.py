@@ -6,11 +6,18 @@ import numpy as np
 import pingouin as pg
 import subprocess
 import datetime as dt
-from datetime import datetime, timedelta
+from datetime import timedelta
 import uuid
 import random
 import warnings
 warnings.filterwarnings(action="ignore")
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s  - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    filename="analysis_script_logs.log"
+)
 
 ##-----------------------------------------------------END OF STEP 1-----------------------------------------------------##
 
@@ -73,7 +80,7 @@ df_reduced = pd.concat(df_reduced)
 
 # Add a new field to df_reduced showing a different format of "dps_sessionid_created_at_utc". We want to display the format followed by DPS, which is "%Y-%m-%dT%H:%M:%SZ"
 df_reduced["dps_sessionid_created_at_utc_formatted"] = df_reduced["dps_sessionid_created_at_utc"]\
-    .apply(lambda x: pd.to_datetime(dt.datetime.strftime(x, "%Y-%m-%dT%H:%M:%SZ")))
+    .apply(lambda x: dt.datetime.strftime(x, "%Y-%m-%dT%H:%M:%SZ"))
 
 df_reduced.reset_index(drop=True, inplace=True)
 
@@ -125,11 +132,11 @@ def var_allocation_func(zg_id, sb_window_size, num_variants, exp_start_time):
 
 # Step 7: Create a function that gives a random UUID to each time interval. Note: This part will be removed once the UUID functionality is incorporated in the JS function
 def hr_interval_date_func_random(zg_id, test_length, sb_interval, zone_name_list: list):
-    min_timestamp_zg_id = df_min_max_dps_session_start_ts[df_min_max_dps_session_start_ts["zone_group_identifier"] == zg_id].reset_index()["min_dps_session_start_ts"][0]
+    min_timestamp_zg_id = pd.to_datetime(df_min_max_dps_session_start_ts[df_min_max_dps_session_start_ts["zone_group_identifier"] == zg_id].reset_index()["min_dps_session_start_ts"].iloc[0])
     num_time_units = int((24 / sb_interval) * test_length)
 
     # Create an array of timestamps separated by the switchback window size
-    df_mapping = [min_timestamp_zg_id] # Decalre teh df_mapping variable as a list with the first value being min_timestamp_zg_id
+    df_mapping = [min_timestamp_zg_id] # Declare teh df_mapping variable as a list with the first value being min_timestamp_zg_id
     timestamp_iter = min_timestamp_zg_id # Initialize the timestamp_iter with min_timestamp_zg_id
     for i in range(1, num_time_units):
         df_mapping.append(timestamp_iter + timedelta(hours = 3))
@@ -137,7 +144,7 @@ def hr_interval_date_func_random(zg_id, test_length, sb_interval, zone_name_list
     df_mapping = pd.DataFrame(df_mapping, columns=["dps_session_created_at"]) # Convert the list to a data frame
 
     # Create new columns
-    df_mapping["dps_session_created_date"] = df_mapping["dps_session_created_at"].apply(lambda x: pd.to_datetime(x.date()))
+    df_mapping["dps_session_created_date"] = df_mapping["dps_session_created_at"].apply(lambda x: x.date())
     df_mapping["dps_session_created_at_interval"] = pd.cut(df_mapping["dps_session_created_at"], bins=num_time_units, right=False)
     df_mapping["common_key"] = 0
 
@@ -155,7 +162,7 @@ def hr_interval_date_func_random(zg_id, test_length, sb_interval, zone_name_list
     return df_mapping
 
 # Step 7: Create a function that gets the p-value for one simulation run. One simulation run entails one zg_id, sb_window_size, number_of_variants, and experiment length
-def p_val_func(zg_id, exp_length, sb_window_size):
+def df_analysis_creator_func(zg_id, exp_length, sb_window_size):
     # After the output.csv file is created, retrieve the variants from the output.csv file and join them to df_reduced
     df_variants = pd.read_csv("output.csv")
     df_analysis = df_reduced[df_reduced["zone_group_identifier"] == zg_id].copy() # Create a copy of df_reduced just for the zg_id being analysed
@@ -165,19 +172,19 @@ def p_val_func(zg_id, exp_length, sb_window_size):
     ##-----------------------------------------------------SEPARATOR-----------------------------------------------------##
 
     # Add a column indicating the week number
-    df_analysis["dps_session_created_date"] = df_analysis["dps_sessionid_created_at_utc_formatted"].apply(lambda x: pd.to_datetime(datetime.date(x)))
+    df_analysis["dps_session_created_date"] = df_analysis["dps_sessionid_created_at_utc"].apply(lambda x: x.date())
     # Change the KPI columns to numeric
     df_analysis[col_list] = df_analysis[col_list].apply(lambda x: pd.to_numeric(x))
 
     ##-----------------------------------------------------SEPARATOR-----------------------------------------------------##
 
     # Create a conditions list
-    start_date = df_analysis["created_date_local"].min()
+    start_date = df_analysis["dps_session_created_date"].min()
     conditions = [
-        (df_analysis["created_date_local"] >= start_date) & (df_analysis["created_date_local"] <= start_date + timedelta(6)),
-        (df_analysis["created_date_local"] >= start_date + timedelta(7)) & (df_analysis["created_date_local"] <= start_date + timedelta(13)),
-        (df_analysis["created_date_local"] >= start_date + timedelta(14)) & (df_analysis["created_date_local"] <= start_date + timedelta(20)),
-        (df_analysis["created_date_local"] >= start_date + timedelta(21)) & (df_analysis["created_date_local"] <= start_date + timedelta(27)),
+        (df_analysis["dps_session_created_date"] >= start_date) & (df_analysis["dps_session_created_date"] <= start_date + timedelta(days=6)),
+        (df_analysis["dps_session_created_date"] >= start_date + timedelta(days=7)) & (df_analysis["dps_session_created_date"] <= start_date + timedelta(days=13)),
+        (df_analysis["dps_session_created_date"] >= start_date + timedelta(days=14)) & (df_analysis["dps_session_created_date"] <= start_date + timedelta(days=20)),
+        (df_analysis["dps_session_created_date"] >= start_date + timedelta(days=21)) & (df_analysis["dps_session_created_date"] <= start_date + timedelta(days=27)),
     ]
 
     df_analysis["week_num"] = np.select(condlist=conditions, choicelist=["week_1", "week_2", "week_3", "week_4"])
@@ -197,7 +204,7 @@ def p_val_func(zg_id, exp_length, sb_window_size):
 
     # Get the right interval using the "check_right_interval" function
     df_analysis['dps_session_created_at_interval'] = df_analysis\
-        .apply(lambda x: check_right_interval(x['dps_sessionid_created_at_utc_formatted'], df_mapping['dps_session_created_at_interval']), axis = 1)
+        .apply(lambda x: check_right_interval(x['dps_sessionid_created_at_utc'], df_mapping['dps_session_created_at_interval']), axis = 1)
 
     # Filter df_analysis based on exp_length
     df_analysis = df_analysis[df_analysis["day_num"] <= exp_length]
@@ -230,18 +237,30 @@ def p_val_func(zg_id, exp_length, sb_window_size):
     ##-----------------------------------------------------SEPARATOR-----------------------------------------------------##
 
 # Step 8: Loop through every zone group ID, SB window size, number of variants, and experiment length to calculate the ANOVA p-value
-pval_list = []
+pval_list_tot = []
+pval_list_per_order = []
 for zn in zone_groups: # Loop through all the zone group IDs
     for sb in sb_window_size: # Loop through all switchback window sizes
         for var in num_variants: # Loop through all variants
             for exp in exp_length: # Loop through all experiment lengths
-                var_allocation_func(zg_id=zn, sb_window_size=sb, num_variants=var, exp_start_time=exp) # Run the variant allocation function. The output is a CSV file containing the variant allocations
-                df_analysis, df_analysis_tot, df_analysis_per_order = p_val_func(zg_id=zn, exp_length=exp, sb_window_size=sb) # Run the function that returns the data frames that can be used to compute p-values
+                logging.info(f"Allocating the variants with parameters --> zone: {zn}, SB window size: {sb}, number of variants: {var}, experiment_length: {exp}...")
+                var_allocation_func(
+                    zg_id=zn,
+                    sb_window_size=str(sb),
+                    num_variants=str(var),
+                    exp_start_time=str(df_min_max_dps_session_start_ts[df_min_max_dps_session_start_ts["zone_group_identifier"] == zn].reset_index()["min_dps_session_start_ts"].iloc[0])
+                ) # Run the variant allocation function. The output is a CSV file containing the variant allocations
+                logging.info("Applying the df_analysis_creator_func that reads from the output CSV file and creates the various df_analysis data frames...")
+                df_analysis, df_analysis_tot, df_analysis_per_order = df_analysis_creator_func(zg_id=zn, exp_length=exp, sb_window_size=sb) # Run the function that returns the data frames that can be used to compute p-values
 
                 # Calculate the ANOVA p-value
-                for iter_col in df_analysis_per_order.columns[2:]:
-                    anova_pval_tot = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis_tot)["p-unc"].iloc[0].round(4)
+                logging.info("Calculating the p-values for the different KPIs")
+                for iter_col in df_analysis_per_order.columns[2:]: # Pick the columns from the data frame that has more columns
                     anova_pval_per_order = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis_per_order)["p-unc"].iloc[0].round(4)
+                    try:
+                        anova_pval_tot = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis_tot)["p-unc"].iloc[0].round(4)
+                    except KeyError: # df_analysis_tot does not have the logistics KPIs, so it will generate an error that we handle with this try-except block
+                        print(f"Trying to calculate a p-value for {iter_col} from df_analysis_tot, which is not possible. Bypassing to avoid an error...")
 
                     # Create significance flags based on the p-values
                     if anova_pval_tot <= sig_level:
@@ -254,23 +273,36 @@ for zn in zone_groups: # Loop through all the zone group IDs
                     else:
                         anova_sig_per_order = "insignificant"
                 
-                    # Append to df_pval
-                    output_dict = {
-                        "sim_run_id": zn + "-" + sb + "-window_size-" + var + "-var_num-" + exp + "-exp_length",
+                    # Create the output dictionaries
+                    output_dict_base = {
+                        "sim_run_id": zn + "-" + str(sb) + "-window_size-" + str(var) + "-var_num-" + str(exp) + "-exp_length",
                         "zone_group": zn,
                         "sb_window_size": sb,
                         "num_variants": var,
                         "exp_length": exp,
-                        "kpi": iter_col,
-                        "anova_pval_tot": anova_pval_tot,
-                        "anova_sig_tot": anova_sig_tot,
-                        "anova_pval_per_order": anova_pval_per_order,
-                        "anova_sig_per_order": anova_sig_per_order,
+                        "kpi": iter_col
                     }
-                    pval_list.append(output_dict)
+                    output_dict_tot = output_dict_base.copy()
+                    output_dict_per_order = output_dict_base.copy()
+                    output_dict_tot.update({
+                        "anova_pval": anova_pval_tot,
+                        "anova_sig": anova_sig_tot,
+                        "kpi_type": "tot"
+                    })
+                    output_dict_per_order.update({
+                        "anova_pval": anova_pval_per_order,
+                        "anova_sig": anova_sig_per_order,
+                        "kpi_type": "per_order"
+                    })
 
-# Convert df_pval to a data frame
-df_pval = pd.DataFrame(pval_list)
+                    # Append the results to the empty lists created above
+                    pval_list_tot.append(output_dict_tot)
+                    pval_list_per_order.append(output_dict_per_order)
+
+# Convert df_pval_tot and df_pval_per_order to data frames
+df_pval_tot = pd.DataFrame(pval_list_tot)
+df_pval_per_order = pd.DataFrame(pval_list_per_order)
+df_pval = pd.concat([df_pval_tot, df_pval_per_order[df_pval_per_order["kpi"] != "order_count"]])
 
 ##-----------------------------------------------------END OF STEP 8-----------------------------------------------------##
 
@@ -283,10 +315,9 @@ job_config = bigquery.LoadJobConfig(
         bigquery.SchemaField("num_variants", "INT64"),
         bigquery.SchemaField("exp_length", "INT64"),
         bigquery.SchemaField("kpi", "STRING"),
-        bigquery.SchemaField("anova_pval_tot", "FLOAT64"),
-        bigquery.SchemaField("anova_sig_tot", "STRING"),
-        bigquery.SchemaField("anova_pval_per_order", "FLOAT64"),
-        bigquery.SchemaField("anova_sig_per_order", "STRING"),
+        bigquery.SchemaField("anova_pval", "FLOAT64"),
+        bigquery.SchemaField("anova_sig", "STRING"),
+        bigquery.SchemaField("kpi_type", "STRING"),
     ]
 )
 
@@ -295,7 +326,7 @@ job_config.write_disposition = bigquery.WriteDisposition.WRITE_TRUNCATE
 
 # Upload the p-values data frame to BQ
 client.load_table_from_dataframe(
-    dataframe=df_pval.reset_index(),
+    dataframe=df_pval.reset_index(drop=True),
     destination="dh-logistics-product-ops.pricing.df_pval_switchback_randomization_algo_analysis",
     job_config=job_config
 ).result()
