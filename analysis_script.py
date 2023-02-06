@@ -260,7 +260,7 @@ for zn in zone_groups: # Loop through all the zone group IDs
                     try:
                         anova_pval_tot = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis_tot)["p-unc"].iloc[0].round(4)
                     except KeyError: # df_analysis_tot does not have the logistics KPIs, so it will generate an error that we handle with this try-except block
-                        print(f"Trying to calculate a p-value for {iter_col} from df_analysis_tot, which is not possible. Bypassing to avoid an error...")
+                        logging.info(f"Trying to calculate a p-value for {iter_col} from df_analysis_tot, which is not possible. Bypassing to avoid an error...")
 
                     # Create significance flags based on the p-values
                     if anova_pval_tot <= sig_level:
