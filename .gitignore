@@ -2,3 +2,6 @@ __MACOSX
 *.ini
 test.py
 *.log
+*.ipynb
+*.pk
+*.csv.gz
