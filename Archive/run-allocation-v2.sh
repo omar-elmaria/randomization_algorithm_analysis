@@ -1,3 +1,4 @@
+#!/bin/bash
 helpFunction()
 {
    echo ""
@@ -7,11 +8,10 @@ helpFunction()
    echo -e "\t-t Experiment start time in the format YYY-MM-DDThh:mm:ssZ Eg: 2022-12-03T10:15:30Z"
    echo -e "\t-k Experiment key [Optional] Eg: 28115"
    echo -e "\t-s Experiment salt[Optional] Eg: DB0720FD-326E-407F-9EA2-512BF8154DDE"
-   echo -e "\t-f Input file name [Optional, Default is input.csv] Eg: orders.csv"
    exit 1 # Exit script after printing help
 }
 
-while getopts "w:v:t:k:s:f:" opt
+while getopts "w:v:t:k:s:" opt
 do
    case "$opt" in
       w ) switchbackWindow="$OPTARG" ;;
@@ -19,7 +19,6 @@ do
       t ) experimentStartTime="$OPTARG" ;;
       k ) experimentKey="$OPTARG" ;;
       s ) salt="$OPTARG" ;;
-      f ) inputFile="$OPTARG" ;;
       ? ) helpFunction ;; # Print helpFunction in case parameter is non-existent
    esac
 done
@@ -48,34 +47,23 @@ then
 else
     uuid=$salt
 fi
-if [ -z "$inputFile" ]
-then
-    INPUT=input.csv
-else
-    INPUT=$inputFile
-fi
-
 
 echo "key: $KEY"
 echo "salt: $uuid"
-echo "input file: $INPUT"
 
 echo "Switchback parameters are valid, starting experiment.."
-now=$(date +"%FT%H%M%S")
-file="output_$now.csv"
-echo "Output filename: $file"
-echo "OrderID,Variant,SlotUID" > "$file"
+echo "OrderID,Variant" > output.csv
 
 # Start reading from input file
 
-#INPUT=input.csv
+INPUT=input.csv
 OLDIFS=$IFS
 IFS=','
 [ ! -f $INPUT ] && { echo "$INPUT file not found"; exit 99; }
 while read orderId zone orderTime
 do
-	java -jar experiment-allocation.jar $switchbackWindow $numOfVariants $experimentStartTime $KEY $uuid $orderId $zone $orderTime >> "$file"
+	java -jar experiment-allocation.jar $switchbackWindow $numOfVariants $experimentStartTime $KEY $uuid $orderId $zone $orderTime >> output.csv
 done < $INPUT
 IFS=$OLDIFS
 
-echo "Allocation is complete. Results are available in $file file"
+echo "Allocation is complete. Results are available in output.csv file"
