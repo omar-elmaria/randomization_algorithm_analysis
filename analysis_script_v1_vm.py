@@ -9,6 +9,13 @@ import uuid
 import random
 import warnings
 warnings.filterwarnings(action="ignore")
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s  - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    filename="analysis_script_logs_v2.log"
+)
 
 ##-----------------------------------------------------END OF STEP 1-----------------------------------------------------##
 
@@ -58,7 +65,7 @@ def dt_inplace(df):
             pass # ...so leave whole column as-is unconverted
     return df
 
-def read_pickle_func(*args, **kwargs):
+def read_csv_gzip_func(*args, **kwargs):
     """Drop-in replacement for Pandas pd.read_csv. It invokes
     pd.read_csv() (passing its arguments) and then auto-
     matically detects and converts each column whose datatype
@@ -66,9 +73,9 @@ def read_pickle_func(*args, **kwargs):
     non-NaN values can be successfully parsed by
     pd.to_datetime(), and returns the resulting dataframe.
     """
-    return dt_inplace(pd.read_pickle(*args, **kwargs))
+    return dt_inplace(pd.read_csv(*args, **kwargs))
 
-df = read_pickle_func("df.pk")
+df = read_csv_gzip_func("df.csv.gz", compression="gzip")
 
 ##-----------------------------------------------------END OF STEP 3-----------------------------------------------------##
 
@@ -244,24 +251,24 @@ for zn in zone_groups: # Loop through all the zone group IDs
     for sb in sb_window_size: # Loop through all switchback window sizes
         for var in num_variants: # Loop through all variants
             for exp in exp_length: # Loop through all experiment lengths
-                print(f"Allocating the variants with parameters --> zone: {zn}, SB window size: {sb}, number of variants: {var}, experiment_length: {exp}...")
+                logging.info(f"Allocating the variants with parameters --> zone: {zn}, SB window size: {sb}, number of variants: {var}, experiment_length: {exp}...")
                 var_allocation_func(
                     zg_id=zn,
                     sb_window_size=str(sb),
                     num_variants=str(var),
                     exp_start_time=str(df_min_max_dps_session_start_ts[df_min_max_dps_session_start_ts["zone_group_identifier"] == zn].reset_index()["min_dps_session_start_ts"].iloc[0])
                 ) # Run the variant allocation function. The output is a CSV file containing the variant allocations
-                print("Applying the df_analysis_creator_func that reads from the output CSV file and creates the various df_analysis data frames...")
+                logging.info("Applying the df_analysis_creator_func that reads from the output CSV file and creates the various df_analysis data frames...")
                 df_analysis, df_analysis_tot, df_analysis_per_order = df_analysis_creator_func(zg_id=zn, exp_length=exp, sb_window_size=sb) # Run the function that returns the data frames that can be used to compute p-values
 
                 # Calculate the ANOVA p-value
-                print("Calculating the p-values for the different KPIs")
+                logging.info("Calculating the p-values for the different KPIs")
                 for iter_col in df_analysis_per_order.columns[2:]: # Pick the columns from the data frame that has more columns
                     anova_pval_per_order = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis_per_order)["p-unc"].iloc[0].round(4)
                     try:
                         anova_pval_tot = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis_tot)["p-unc"].iloc[0].round(4)
                     except KeyError: # df_analysis_tot does not have the logistics KPIs, so it will generate an error that we handle with this try-except block
-                        print(f"Trying to calculate a p-value for {iter_col} from df_analysis_tot, which is not possible. Bypassing to avoid an error...")
+                        logging.info(f"Trying to calculate a p-value for {iter_col} from df_analysis_tot, which is not possible. Bypassing to avoid an error...")
 
                     # Create significance flags based on the p-values
                     if anova_pval_tot <= sig_level:
@@ -308,4 +315,4 @@ df_pval = pd.concat([df_pval_tot, df_pval_per_order[df_pval_per_order["kpi"] != 
 ##-----------------------------------------------------END OF STEP 8-----------------------------------------------------##
 
 # Right the results to an Excel file
-df_pval.to_excel("df_pval.xlsx", index=False)
+df_pval.to_excel("df_pval_v1.xlsx", index=False)
