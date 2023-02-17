@@ -157,7 +157,7 @@ def df_analysis_creator_func(zg_id, exp_length):
     # Change the KPI columns to numeric
     df_analysis[col_list] = df_analysis[col_list].apply(lambda x: pd.to_numeric(x))
     # Rename the column slotUID to time_zone_unit_id
-    df_analysis.rename(columns={"SlotUID": "time_zone_unit_id"}, inplace=True)
+    df_analysis.rename({"SlotID": "time_zone_unit_id"}, axis=1, inplace=True)
 
     ##-----------------------------------------------------SEPARATOR-----------------------------------------------------##
 
@@ -202,6 +202,7 @@ def df_analysis_creator_func(zg_id, exp_length):
     ##-----------------------------------------------------SEPARATOR-----------------------------------------------------##
 
 # Step 8: Loop through every zone group ID, SB window size, number of variants, and experiment length to calculate the ANOVA p-value
+counter = 1
 pval_list_tot = []
 pval_list_per_order = []
 for zn in zone_groups: # Loop through all the zone group IDs
@@ -265,6 +266,10 @@ for zn in zone_groups: # Loop through all the zone group IDs
                     pval_list_tot.append(output_dict_tot)
                     pval_list_per_order.append(output_dict_per_order)
 
+                    # Mark end of p-value calculation
+                    logging.info(f"Finished calculating the p-values for iteration {counter} with parameters --> zone: {zn}, SB window size: {sb}, number of variants: {var}, experiment_length: {exp}...\n")
+                    counter += 1
+
 # Convert df_pval_tot and df_pval_per_order to data frames
 df_pval_tot = pd.DataFrame(pval_list_tot)
 df_pval_per_order = pd.DataFrame(pval_list_per_order)
@@ -273,6 +278,7 @@ df_pval = pd.concat([df_pval_tot, df_pval_per_order[df_pval_per_order["kpi"] != 
 ##-----------------------------------------------------END OF STEP 8-----------------------------------------------------##
 
 # Upload the data frame to big query
+logging.info("Uploading the data to bigquery...")
 job_config = bigquery.LoadJobConfig(
     schema = [
         bigquery.SchemaField("sim_run_id", "STRING"),

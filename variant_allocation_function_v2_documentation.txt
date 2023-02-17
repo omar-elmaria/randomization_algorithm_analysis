@@ -8,7 +8,7 @@ This is a utility for running switchback allocation. The folder contains the fol
 	-t Experiment start time in the format YYY-MM-DDThh:mm:ssZ
 	-k Experiment key [Optional]
 	-s Experiment salt[Optional]
-        -f Input file name
+    -f Input file name
 
    Usage: ./run-allocation.sh -w 3.0 -v 3 -t 2022-11-03T10:15:30Z -k 28115 -s DB0720FD-326E-407F-9EA2-512BF8154DDE -f orders.csv
 

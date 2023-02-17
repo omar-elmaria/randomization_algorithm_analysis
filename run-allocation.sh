@@ -1,3 +1,4 @@
+#!/bin/bash
 helpFunction()
 {
    echo ""
@@ -61,21 +62,6 @@ echo "salt: $uuid"
 echo "input file: $INPUT"
 
 echo "Switchback parameters are valid, starting experiment.."
-now=$(date +"%FT%H%M%S")
-file="output_$now.csv"
-echo "Output filename: $file"
-echo "OrderID,Variant,SlotUID" > "$file"
 
-# Start reading from input file
+java -jar experiment-allocation.jar "$switchbackWindow" "$numOfVariants" "$experimentStartTime" "$KEY" "$uuid" "$INPUT"
 
-#INPUT=input.csv
-OLDIFS=$IFS
-IFS=','
-[ ! -f $INPUT ] && { echo "$INPUT file not found"; exit 99; }
-while read orderId zone orderTime
-do
-	java -jar experiment-allocation.jar $switchbackWindow $numOfVariants $experimentStartTime $KEY $uuid $orderId $zone $orderTime >> "$file"
-done < $INPUT
-IFS=$OLDIFS
-
-echo "Allocation is complete. Results are available in $file file"
