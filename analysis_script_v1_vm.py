@@ -8,6 +8,7 @@ from datetime import timedelta
 import uuid
 import random
 import warnings
+import os
 warnings.filterwarnings(action="ignore")
 import logging
 logging.basicConfig(
@@ -107,7 +108,13 @@ df_min_max_dps_session_start_ts = df_reduced.groupby(["entity_id", "zone_group_i
 ##-----------------------------------------------------END OF STEP 5-----------------------------------------------------##
 
 # Step 6: Define a function that allocates variants to orders based on some input parameters
-def var_allocation_func(zg_id, sb_window_size, num_variants, exp_start_time):
+def var_allocation_func(zg_id, sb_window_size, num_variants, exp_start_time, input_file_name):
+    # Delete all output CSV files if they exist
+    output_csv_file_list = [i for i in os.listdir() if i.startswith("output")]
+    if len(output_csv_file_list) > 0:
+        for i in output_csv_file_list:
+            os.remove(i)
+    
     # Create a function that takes the zone_group_identifier and creates a CSV file called input_{zg_identifier}
     # This file contains the details necessary to run the randomization algorithm
     def input_csv_func(zg_identifier):
@@ -115,7 +122,7 @@ def var_allocation_func(zg_id, sb_window_size, num_variants, exp_start_time):
             .sort_values("dps_sessionid_created_at_utc_formatted")\
             .reset_index(drop=True)
         df_stg["dps_sessionid_created_at_utc_formatted"] = df_stg["dps_sessionid_created_at_utc_formatted"].apply(lambda x: str(x))
-        df_stg.to_csv(f"input.csv", index=False, header=False, date_format="str")
+        df_stg.to_csv(input_file_name, index=False, header=False, date_format="str")
 
     # Invoke the function that creates the input file. Keep in mind that this overwrites the already existing input.csv file
     input_csv_func(zg_identifier=zg_id)
@@ -133,7 +140,9 @@ def var_allocation_func(zg_id, sb_window_size, num_variants, exp_start_time):
         "-k",
         str(random.randint(1000, 2000)),
         "-s",
-        str(uuid.uuid4())    
+        str(uuid.uuid4()),
+        "-f",
+        input_file_name
     ])
 
 ##-----------------------------------------------------END OF STEP 6-----------------------------------------------------##
@@ -171,8 +180,12 @@ def hr_interval_date_func_random(zg_id, test_length, sb_interval, zone_name_list
 
 # Step 7: Create a function that gets the p-value for one simulation run. One simulation run entails one zg_id, sb_window_size, number_of_variants, and experiment length
 def df_analysis_creator_func(zg_id, exp_length, sb_window_size):
+    # Read get the name of the output csv file
+    csv_output_file_name = [i for i in os.listdir() if i.startswith("output")][0]
+
     # After the output.csv file is created, retrieve the variants from the output.csv file and join them to df_reduced
-    df_variants = pd.read_csv("output.csv")
+    df_variants = pd.read_csv(f"{csv_output_file_name}")
+
     df_analysis = df_reduced[df_reduced["zone_group_identifier"] == zg_id].copy() # Create a copy of df_reduced just for the zg_id being analysed
     df_analysis = pd.merge(left=df_analysis, right=df_variants, how="left", left_on="platform_order_code", right_on="OrderID")
     df_analysis.drop("OrderID", axis=1, inplace=True)
@@ -183,6 +196,8 @@ def df_analysis_creator_func(zg_id, exp_length, sb_window_size):
     df_analysis["dps_session_created_date"] = df_analysis["dps_sessionid_created_at_utc"].apply(lambda x: x.date())
     # Change the KPI columns to numeric
     df_analysis[col_list] = df_analysis[col_list].apply(lambda x: pd.to_numeric(x))
+    # Rename the column slotUID to time_zone_unit_id
+    df_analysis.rename({"SlotID": "time_zone_unit_id"}, axis=1, inplace=True)
 
     ##-----------------------------------------------------SEPARATOR-----------------------------------------------------##
 
@@ -257,7 +272,8 @@ for zn in zone_groups: # Loop through all the zone group IDs
                     zg_id=zn,
                     sb_window_size=str(sb),
                     num_variants=str(var),
-                    exp_start_time=str(df_min_max_dps_session_start_ts[df_min_max_dps_session_start_ts["zone_group_identifier"] == zn].reset_index()["min_dps_session_start_ts"].iloc[0])
+                    exp_start_time=str(df_min_max_dps_session_start_ts[df_min_max_dps_session_start_ts["zone_group_identifier"] == zn].reset_index()["min_dps_session_start_ts"].iloc[0]),
+                    input_file_name="input_v1.csv"
                 ) # Run the variant allocation function. The output is a CSV file containing the variant allocations
                 logging.info("Applying the df_analysis_creator_func that reads from the output CSV file and creates the various df_analysis data frames...")
                 df_analysis, df_analysis_tot, df_analysis_per_order = df_analysis_creator_func(zg_id=zn, exp_length=exp, sb_window_size=sb) # Run the function that returns the data frames that can be used to compute p-values
@@ -320,5 +336,5 @@ df_pval = pd.concat([df_pval_tot, df_pval_per_order[df_pval_per_order["kpi"] != 
 ##-----------------------------------------------------END OF STEP 8-----------------------------------------------------##
 
 # Right the results to an Excel file
-logging.info("Uploading the data to Excel...")
+logging.info("Publishing the data to Excel...")
 df_pval.to_excel("df_pval_v1.xlsx", index=False)
