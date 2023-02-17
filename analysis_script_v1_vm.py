@@ -308,9 +308,9 @@ for zn in zone_groups: # Loop through all the zone group IDs
                     pval_list_tot.append(output_dict_tot)
                     pval_list_per_order.append(output_dict_per_order)
 
-                    # Mark end of p-value calculation
-                    logging.info(f"Finished calculating the p-values for iteration {counter} with parameters --> zone: {zn}, SB window size: {sb}, number of variants: {var}, experiment_length: {exp}...\n")
-                    counter += 1
+                # Mark end of p-value calculation
+                logging.info(f"Finished calculating the p-values for iteration {counter} with parameters --> zone: {zn}, SB window size: {sb}, number of variants: {var}, experiment_length: {exp}...\n")
+                counter += 1
 
 # Convert df_pval_tot and df_pval_per_order to data frames
 df_pval_tot = pd.DataFrame(pval_list_tot)
