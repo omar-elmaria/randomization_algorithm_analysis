@@ -5,3 +5,4 @@ test.py
 test.ipynb
 *.pk
 *.csv.gz
+.xlsx
