@@ -223,24 +223,7 @@ for zn in zone_groups: # Loop through all the zone group IDs
                 # Calculate the ANOVA p-value
                 logging.info("Calculating the p-values for the different KPIs")
                 for iter_col in df_analysis_per_order.columns[2:]: # Pick the columns from the data frame that has more columns
-                    anova_pval_per_order = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis_per_order)["p-unc"].iloc[0].round(4)
-                    try:
-                        anova_pval_tot = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis_tot)["p-unc"].iloc[0].round(4)
-                    except KeyError: # df_analysis_tot does not have the logistics KPIs, so it will generate an error that we handle with this try-except block
-                        logging.info(f"Trying to calculate a p-value for {iter_col} from df_analysis_tot, which is not possible. Bypassing to avoid an error...")
-
-                    # Create significance flags based on the p-values
-                    if anova_pval_tot <= sig_level:
-                        anova_sig_tot = "significant"
-                    else:
-                        anova_sig_tot = "insignificant"
-
-                    if anova_pval_per_order <= sig_level:
-                        anova_sig_per_order = "significant"
-                    else:
-                        anova_sig_per_order = "insignificant"
-                
-                    # Create the output dictionaries
+                    # Create the base output dictionary
                     output_dict_base = {
                         "sim_run_id": zn + "-" + str(sb) + "-window_size-" + str(var) + "-var_num-" + str(exp) + "-exp_length",
                         "zone_group": zn,
@@ -249,22 +232,48 @@ for zn in zone_groups: # Loop through all the zone group IDs
                         "exp_length": exp,
                         "kpi": iter_col
                     }
-                    output_dict_tot = output_dict_base.copy()
+
+                    # Calculate the ANOVA pval for per order metrics
+                    anova_pval_per_order = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis_per_order)["p-unc"].iloc[0].round(4)
+
+                    # Create significance flags based on the p-values
+                    if anova_pval_per_order <= sig_level:
+                        anova_sig_per_order = "significant"
+                    else:
+                        anova_sig_per_order = "insignificant"
+
+                    # Enrich the output_dict_per_order with the ANOVA p-value and significance label
                     output_dict_per_order = output_dict_base.copy()
-                    output_dict_tot.update({
-                        "anova_pval": anova_pval_tot,
-                        "anova_sig": anova_sig_tot,
-                        "kpi_type": "tot"
-                    })
                     output_dict_per_order.update({
                         "anova_pval": anova_pval_per_order,
                         "anova_sig": anova_sig_per_order,
                         "kpi_type": "per_order"
                     })
-
-                    # Append the results to the empty lists created above
-                    pval_list_tot.append(output_dict_tot)
+                    
                     pval_list_per_order.append(output_dict_per_order)
+
+                    try:
+                        # Calculate the ANOVA pval for per order metrics
+                        anova_pval_tot = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis_tot)["p-unc"].iloc[0].round(4)
+
+                        # Create significance flags based on the p-values
+                        if anova_pval_tot <= sig_level:
+                            anova_sig_tot = "significant"
+                        else:
+                            anova_sig_tot = "insignificant"
+                        
+                        # Enrich the output_dict_tot with the ANOVA p-value and significance label
+                        output_dict_tot = output_dict_base.copy()
+                        output_dict_tot.update({
+                            "anova_pval": anova_pval_tot,
+                            "anova_sig": anova_sig_tot,
+                            "kpi_type": "tot"
+                        })
+
+                        # Append the results to the empty lists created above
+                        pval_list_tot.append(output_dict_tot)
+                    except KeyError: # df_analysis_tot does not have the logistics KPIs, so it will generate an error that we handle with this try-except block
+                        logging.info(f"Trying to calculate a p-value for {iter_col} from df_analysis_tot, which is not possible. Bypassing to avoid an error...")
 
                 # Mark end of p-value calculation
                 logging.info(f"Finished calculating the p-values for iteration {counter} with parameters --> zone: {zn}, SB window size: {sb}, number of variants: {var}, experiment_length: {exp}...\n")
