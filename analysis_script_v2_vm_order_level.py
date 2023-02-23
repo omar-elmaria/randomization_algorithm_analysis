@@ -46,7 +46,7 @@ entity_asa_zone_dict = [ # Define a list of dictionaries containing the entity I
     {"entity_id": "FP_PH", "asa_id": 508, "zone_names": ["Makati", "Pasay"], "zone_group_identifier": "zg_9"}
 ]
 zone_groups = [i["zone_group_identifier"] for i in entity_asa_zone_dict]
-sig_level = 0.05
+sig_level = 0.1
 
 ##-----------------------------------------------------END OF STEP 2-----------------------------------------------------##
 
@@ -205,18 +205,16 @@ def df_analysis_creator_func(zg_id, exp_length):
     # Reset the indices of the 
     df_analysis_tot = df_analysis_tot.reset_index()
     df_analysis_per_order = df_analysis_per_order.reset_index()
-    print(df_analysis_per_order.columns)
 
     return df_analysis, df_analysis_tot, df_analysis_per_order
     ##-----------------------------------------------------SEPARATOR-----------------------------------------------------##
 
 # Step 8: Loop through every zone group ID, SB window size, number of variants, and experiment length to calculate the ANOVA p-value
 counter = 1
-pval_list_tot = []
-pval_list_per_order = []
+pval_list = []
 kpi_col_list = [
     'actual_df_paid_by_customer', 'gfv_local', 'gmv_local', 'commission_local', 'joker_vendor_fee_local', # Customer KPIs (1)
-    'sof_local', 'service_fee_local', 'revenue_local', 'delivery_costs_local', 'gross_profit_local', 'order_count', # Customer KPIs (2)
+    'sof_local', 'service_fee_local', 'revenue_local', 'delivery_costs_local', 'gross_profit_local', # Customer KPIs (2)
     'dps_mean_delay', 'delivery_distance_m', 'actual_DT' # Logistics KPIs
 ]
 for zn in zone_groups: # Loop through all the zone group IDs
@@ -248,54 +246,31 @@ for zn in zone_groups: # Loop through all the zone group IDs
                     }
 
                     # Calculate the ANOVA pval for per order metrics
-                    if iter_col != "order_count":
-                        anova_pval_per_order = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis_per_order)["p-unc"].iloc[0].round(4)
+                    anova_pval = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis)["p-unc"].iloc[0].round(4)
 
-                        # Create significance flags based on the p-values
-                        if anova_pval_per_order <= sig_level:
-                            anova_sig_per_order = "significant"
-                        else:
-                            anova_sig_per_order = "insignificant"
+                    # Create significance flags based on the p-values
+                    if anova_pval <= sig_level:
+                        anova_sig = "significant"
+                    else:
+                        anova_sig = "insignificant"
 
-                        # Enrich the output_dict_per_order with the ANOVA p-value and significance label
-                        output_dict_per_order = output_dict_base.copy()
-                        output_dict_per_order.update({
-                            "anova_pval": anova_pval_per_order,
-                            "anova_sig": anova_sig_per_order,
-                            "kpi_type": "per_order"
-                        })
+                    # Enrich the output_dict with the ANOVA p-value and significance label
+                    output_dict = output_dict_base.copy()
+                    output_dict.update({
+                        "anova_pval": anova_pval,
+                        "anova_sig": anova_sig,
+                        "kpi_type": "order_level"
+                    })
 
-                        pval_list_per_order.append(output_dict_per_order)
-
-                    if iter_col not in ['dps_mean_delay', 'delivery_distance_m', 'actual_DT']:
-                        # Calculate the ANOVA pval for per order metrics
-                        anova_pval_tot = pg.welch_anova(dv=iter_col, between="Variant", data=df_analysis)["p-unc"].iloc[0].round(4)
-
-                        # Create significance flags based on the p-values
-                        if anova_pval_tot <= sig_level:
-                            anova_sig_tot = "significant"
-                        else:
-                            anova_sig_tot = "insignificant"
-
-                        # Enrich the output_dict_tot with the ANOVA p-value and significance label
-                        output_dict_tot = output_dict_base.copy()
-                        output_dict_tot.update({
-                            "anova_pval": anova_pval_tot,
-                            "anova_sig": anova_sig_tot,
-                            "kpi_type": "tot"
-                        })
-
-                        # Append the results to the empty lists created above
-                        pval_list_tot.append(output_dict_tot)
+                    # Append the results to the empty lists created above
+                    pval_list.append(output_dict)
 
                 # Mark end of p-value calculation
                 logging.info(f"Finished calculating the p-values for iteration {counter} with parameters --> zone: {zn}, SB window size: {sb}, number of variants: {var}, experiment_length: {exp}...\n")
                 counter += 1
 
-# Convert df_pval_tot and df_pval_per_order to data frames
-df_pval_tot = pd.DataFrame(pval_list_tot)
-df_pval_per_order = pd.DataFrame(pval_list_per_order)
-df_pval = pd.concat([df_pval_tot, df_pval_per_order[df_pval_per_order["kpi"] != "order_count"]])
+# Convert pval_list to a data frame
+df_pval = pd.DataFrame(pval_list)
 
 ##-----------------------------------------------------END OF STEP 8-----------------------------------------------------##
 
