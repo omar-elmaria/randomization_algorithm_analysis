@@ -46,7 +46,7 @@ entity_asa_zone_dict = [ # Define a list of dictionaries containing the entity I
     {"entity_id": "FP_PH", "asa_id": 508, "zone_names": ["Makati", "Pasay"], "zone_group_identifier": "zg_9"}
 ]
 zone_groups = [i["zone_group_identifier"] for i in entity_asa_zone_dict]
-sig_level = 0.05
+sig_level = 0.1
 
 ##-----------------------------------------------------END OF STEP 2-----------------------------------------------------##
 
